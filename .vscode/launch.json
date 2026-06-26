@@ -1,44 +1,121 @@
- {
-     "version": "0.2.0",
-     "configurations": [
-         {
-             "name": "Debug (F5)",
-             "type": "cppdbg",
-             "request": "launch",
-             "program": "${workspaceFolder}/build/blackhole.exe",
-             "args": [],
-             "cwd": "${workspaceFolder}",
-             "preLaunchTask": "build-debug",
-             "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
-             "externalConsole": true,
-             "MIMode": "gdb",
-             "setupCommands": [
-                 {
-                     "description": "Enable pretty printing for gdb",
-                     "text": "-enable-pretty-printing",
-                     "ignoreFailures": true
-                 }
-             ],
-             "presentation": {
-                 "group": "cpp",
-                 "order": 1
-             }
-         },
-         {
-             "name": "Run (Ctrl+F5)",
-             "type": "cppdbg",
-             "request": "launch",
-             "program": "${workspaceFolder}/build/blackhole.exe",
-             "args": [],
-             "cwd": "${workspaceFolder}",
-             "preLaunchTask": "build-release",
-             "externalConsole": false,
-             "MIMode": "gdb",
-             "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
-             "presentation": {
-                 "group": "cpp",
-                 "order": 2
-             }
-         }
-     ]
- }
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug (F5)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/blackhole.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "build-debug",
+            "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+            "externalConsole": true,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "presentation": {
+                "group": "cpp",
+                "order": 1
+            }
+        },
+        {
+            "name": "Run (Ctrl+F5)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/blackhole.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "build-release",
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+            "presentation": {
+                "group": "cpp",
+                "order": 2
+            }
+        },
+        {
+            "name": "Blackhole: Always",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/blackhole.exe",
+            "args": [
+                "always"
+            ],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "build-debug",
+            "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "presentation": {
+                "group": "blackhole",
+                "order": 1
+            }
+        },
+        {
+            "name": "Blackhole: Idle (5min)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/blackhole.exe",
+            "args": [
+                "idle",
+                "300"
+            ],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "build-debug",
+            "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "presentation": {
+                "group": "blackhole",
+                "order": 2
+            }
+        },
+        {
+            "name": "Blackhole: Idle (1min)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/blackhole.exe",
+            "args": [
+                "idle",
+                "60"
+            ],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "build-debug",
+            "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "presentation": {
+                "group": "blackhole",
+                "order": 3
+            }
+        }
+    ]
+}

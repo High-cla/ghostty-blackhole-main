@@ -181,7 +181,7 @@ static bool buildFragmentShader(std::string& out) {
         body.replace(pos, 29, "#define SIZE_MODE MODE_DEMO");
 
     out = header + "\n// ===== blackhole.glsl core =====\n" + body +
-          "\nvoid main() { vec4 c; mainImage(c, gl_FragCoord.xy); fragColor = c; }\n";
+          "\nvoid main() { vec4 c; vec2 fc = vec2(gl_FragCoord.x, iResolution.y - gl_FragCoord.y); mainImage(c, fc); fragColor = c; }\n";
     return true;
 }
  
