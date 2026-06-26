@@ -1,11 +1,17 @@
-// gui_config.h — ImGui config panel for blackhole parameters
+﻿// gui_config.h  ImGui config panel for blackhole parameters
 #pragma once
 
 struct BlackholeConfig {
-    int  mode      = 0;    // 0=always, 1=idle
-    int  idleSec   = 300;  // idle timeout in seconds
-    bool confirmed = false;
+    int   mode       = 0;     // 0=always, 1=idle
+    int   idleSec    = 300;
+    float holeRadius = -1.0f; // -1 = shader default
+    float diskGain   = -1.0f;
+    float diskTemp   = -1.0f;
+    float exposure   = -1.0f;
+    float speed      = -1.0f;
+    float starGain   = -1.0f;
+    float diskIncl   = -1.0f;
+    bool  confirmed  = false;
 };
 
-// Show config panel. Returns true when user clicks Start.
 bool GUI_ShowConfigPanel(BlackholeConfig& cfg);

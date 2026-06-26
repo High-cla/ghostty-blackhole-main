@@ -1,7 +1,6 @@
-// blackhole standalone  Windows OpenGL host for blackhole.glsl
-// v4: WGC capture + PBO upload (cross-GPU, no vendor-specific interop)
-// Build: mkdir build && cd build && cmake .. && make
-// Requires: GLFW 3.4 (mingw-w64-ucrt-x86_64-glfw), OpenGL 3.3
+﻿// blackhole standalone  Windows OpenGL host for blackhole.glsl
+// v5: ImGui config panel + uniform-overridable shader params
+// Build: Ctrl+Shift+B in VS Code
 
 #include <cstdio>
 #include <cstdlib>
@@ -15,22 +14,17 @@
 #include <windows.h>
 #include <d3d11.h>
 #include <dwmapi.h>
-#include <commctrl.h>
 
 #include "capture_wgc.h"
 #include "capture_dxgi.h"
-#include "gui_config.h"
 #include "gl_texture.h"
+#include "gui_config.h"
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
 #include <GL/gl.h>
-
-// =====================================================================
-// OpenGL function pointers (loaded via glfwGetProcAddress)
-// =====================================================================
 
 #ifndef GL_COMPILE_STATUS
 #include <GL/glcorearb.h>
@@ -108,19 +102,10 @@ static bool loadGLFunctions() {
     return true;
 }
 
-// =====================================================================
-// Shader helpers
-// =====================================================================
-
 static std::string readFile(const char* path) {
     std::ifstream f(path, std::ios::in | std::ios::binary);
-    if (!f) {
-        fprintf(stderr, "Error: Cannot open %s\n", path);
-        return "";
-    }
-    std::stringstream ss;
-    ss << f.rdbuf();
-    return ss.str();
+    if (!f) { fprintf(stderr, "Cannot open %s\n", path); return ""; }
+    std::stringstream ss; ss << f.rdbuf(); return ss.str();
 }
 
 static GLuint compileShader(GLenum type, const std::string& source) {
@@ -128,142 +113,97 @@ static GLuint compileShader(GLenum type, const std::string& source) {
     const char* src = source.c_str();
     gl_ShaderSource(shader, 1, &src, nullptr);
     gl_CompileShader(shader);
-    GLint ok = 0;
-    gl_GetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-    char log[4096];
-    gl_GetShaderInfoLog(shader, sizeof(log), nullptr, log);
-    if (log[0]) fprintf(stderr, "[%s] log: %s\n",
-        type == GL_VERTEX_SHADER ? "vert" : "frag", log);
-    if (!ok) {
-        fprintf(stderr, "Shader compile ERROR:\n%s\n", log);
-        gl_DeleteShader(shader);
-        return 0;
-    }
+    GLint ok = 0; gl_GetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+    char log[4096]; gl_GetShaderInfoLog(shader, sizeof(log), nullptr, log);
+    if (log[0]) fprintf(stderr, "[%s] %s\n", type==GL_VERTEX_SHADER?"vert":"frag", log);
+    if (!ok) { gl_DeleteShader(shader); return 0; }
     return shader;
 }
 
-static GLuint createProgram(const std::string& vertSrc, const std::string& fragSrc) {
-    GLuint vs = compileShader(GL_VERTEX_SHADER, vertSrc);
+static GLuint createProgram(const std::string& vert, const std::string& frag) {
+    GLuint vs = compileShader(GL_VERTEX_SHADER, vert);
     if (!vs) return 0;
-    GLuint fs = compileShader(GL_FRAGMENT_SHADER, fragSrc);
+    GLuint fs = compileShader(GL_FRAGMENT_SHADER, frag);
     if (!fs) { gl_DeleteShader(vs); return 0; }
     GLuint prog = gl_CreateProgram();
-    gl_AttachShader(prog, vs);
-    gl_AttachShader(prog, fs);
+    gl_AttachShader(prog, vs); gl_AttachShader(prog, fs);
     gl_LinkProgram(prog);
-    GLint ok = 0;
-    gl_GetProgramiv(prog, GL_LINK_STATUS, &ok);
-    char log[4096];
-    gl_GetProgramInfoLog(prog, sizeof(log), nullptr, log);
-    if (log[0]) fprintf(stderr, "Link log:\n%s\n", log);
-    if (!ok) {
-        fprintf(stderr, "Program link ERROR:\n%s\n", log);
-        gl_DeleteProgram(prog);
-        gl_DeleteShader(vs);
-        gl_DeleteShader(fs);
-        return 0;
-    }
-    gl_DeleteShader(vs);
-    gl_DeleteShader(fs);
+    GLint ok = 0; gl_GetProgramiv(prog, GL_LINK_STATUS, &ok);
+    char log[4096]; gl_GetProgramInfoLog(prog, sizeof(log), nullptr, log);
+    if (log[0]) fprintf(stderr, "Link: %s\n", log);
+    if (!ok) { gl_DeleteProgram(prog); gl_DeleteShader(vs); gl_DeleteShader(fs); return 0; }
+    gl_DeleteShader(vs); gl_DeleteShader(fs);
     return prog;
 }
-
-// =====================================================================
-// Shader composition
-// =====================================================================
 
 static bool buildFragmentShader(std::string& out) {
     std::string header = readFile("shaders/frag_desktop_header.glsl");
     std::string body   = readFile("blackhole.glsl");
     if (header.empty() || body.empty()) return false;
 
-    // Override SIZE_MODE: use MODE_ALWAYS for desktop capture (no token/pomodoro)
+    // Make key constants overridable by uniforms
+    struct { const char* name; const char* uniform; } ov[] = {
+        {"HOLE_RADIUS", "uHoleRadius > 0.0 ? uHoleRadius :"},
+        {"DISK_GAIN",   "uDiskGain > 0.0 ? uDiskGain :"},
+        {"DISK_TEMP",   "uDiskTemp > 0.0 ? uDiskTemp :"},
+        {"EXPOSURE",    "uExposure > 0.0 ? uExposure :"},
+        {"DRIFT_SPEED", "uSpeed > 0.0 ? uSpeed :"},
+        {"STAR_GAIN",   "uStarGain > 0.0 ? uStarGain :"},
+        {"DISK_INCL",   "uDiskIncl > 0.0 ? uDiskIncl :"},
+    };
+    for (auto& o : ov) {
+        std::string p = std::string("const float ") + o.name + " = ";
+        size_t pos = body.find(p);
+        if (pos != std::string::npos) {
+            size_t ve = body.find(";", pos);
+            if (ve != std::string::npos) {
+                std::string v = body.substr(pos + p.length(), ve - pos - p.length());
+                body.replace(pos, ve - pos + 1,
+                    std::string("float ") + o.name + " = " + o.uniform + " " + v + ";");
+            }
+        }
+    }
+
     size_t pos = body.find("#define SIZE_MODE MODE_TOKENS");
     if (pos != std::string::npos)
         body.replace(pos, 29, "#define SIZE_MODE MODE_DEMO");
 
-    out = header + "\n// ===== blackhole.glsl core =====\n" + body +
+    out = header + "\n// ===== blackhole.glsl =====" + body +
           "\nvoid main() { vec4 c; vec2 fc = vec2(gl_FragCoord.x, iResolution.y - gl_FragCoord.y); mainImage(c, fc); fragColor = c; }\n";
     return true;
 }
 
-
-// ---- Window subclass: block DWM non-client activation (kills yellow border) ----
-static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
-                                        UINT_PTR idSubclass, DWORD_PTR refData) {
-    switch (msg) {
-    case WM_NCACTIVATE:
-        // Tell DWM "this window is never active" 闂?prevents the yellow
-        // focus-loss border from appearing when switching to other apps.
-        return FALSE;
-    case WM_MOUSEACTIVATE:
-        // Prevent any mouse interaction from activating the window.
-        return MA_NOACTIVATEANDEAT;
-    }
+// Window subclass: block DWM focus border
+static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR) {
+    if (msg == WM_NCACTIVATE) return FALSE;
+    if (msg == WM_MOUSEACTIVATE) return MA_NOACTIVATEANDEAT;
     return DefSubclassProc(hwnd, msg, wp, lp);
 }
-// =====================================================================
-// Mode system
-// =====================================================================
 
-enum BlackholeMode { MODE_ALWAYS, MODE_IDLE, MODE_OFF };
-
-static bool isIdle(DWORD thresholdMs) {
+static bool isIdle(DWORD ms) {
     LASTINPUTINFO lii = { sizeof(LASTINPUTINFO) };
-    if (!GetLastInputInfo(&lii)) return false;
-    return (GetTickCount() - lii.dwTime) >= thresholdMs;
+    return GetLastInputInfo(&lii) && (GetTickCount() - lii.dwTime) >= ms;
 }
 
-// =====================================================================
-// Main
-// =====================================================================
-
+// ---- Main ----
 int main(int argc, char* argv[]) {
-    // Parse mode
-    BlackholeMode bhMode = MODE_ALWAYS;
-    int idleSec = 300;
-    if (argc > 1) {
-        if (strcmp(argv[1], "idle") == 0) bhMode = MODE_IDLE;
-        else if (strcmp(argv[1], "off") == 0) bhMode = MODE_OFF;
-    }
-    if (argc > 2 && bhMode == MODE_IDLE) {
-        idleSec = atoi(argv[2]);
-        if (idleSec < 10) idleSec = 10;
-    }
-    // Capture mode: "wgc" or "dxgi" (default: dxgi 闂?more stable)
-    bool useWGC = true;
-    if (argc > 1) {
-        for (int i = 1; i < argc; i++) {
-            if (strcmp(argv[i], "wgc") == 0) useWGC = true;
-            else if (strcmp(argv[i], "dxgi") == 0) useWGC = false;
-        }
-    }
-    fprintf(stderr, "Blackhole: capture=%s\n", useWGC ? "WGC" : "DXGI");
-
-    if (bhMode == MODE_OFF) {
-        fprintf(stderr, "Blackhole: MODE_OFF, exiting.\n");
-        return 0;
-    }
-    fprintf(stderr, "Blackhole: mode=%s idle=%ds\n",
-        bhMode == MODE_IDLE ? "idle" : "always", idleSec);
-
-    // Init GLFW (shared between config panel and main window)
-    if (!glfwInit()) {
-        fprintf(stderr, "Failed to initialize GLFW\n");
-        return 1;
+    // Set working directory to project root
+    {
+        char p[MAX_PATH]; GetModuleFileNameA(nullptr, p, MAX_PATH);
+        char* s = strrchr(p, '\\'); if (s) *s = 0;
+        s = strrchr(p, '\\');
+        if (s && (strcmp(s+1,"build")==0 || strcmp(s+1,"Build")==0)) *s = 0;
+        SetCurrentDirectoryA(p);
     }
 
-    // ---- Config Panel ----
+    if (!glfwInit()) { fprintf(stderr, "glfwInit failed\n"); return 1; }
+
+    // ---- ImGui Config Panel ----
     BlackholeConfig cfg;
-    if (!GUI_ShowConfigPanel(cfg)) {
-        glfwTerminate();
-        return 0;  // user cancelled
-    }
-    // Use config values
-    if (cfg.mode == 0)      bhMode = MODE_ALWAYS;
-    else if (cfg.mode == 1) bhMode = MODE_IDLE;
-    idleSec = cfg.idleSec;
+    if (!GUI_ShowConfigPanel(cfg)) { glfwTerminate(); return 0; }
 
+    // ---- Create fullscreen black hole window ----
+    glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_FALSE);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
@@ -272,237 +212,144 @@ int main(int argc, char* argv[]) {
     glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
     glfwWindowHint(GLFW_MOUSE_PASSTHROUGH, GLFW_TRUE);
 
-    // Get primary monitor size
-    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-    int winW = mode->width;
-    int winH = mode->height;
-
-    GLFWwindow* window = glfwCreateWindow(winW, winH, "Black Hole (ESC to exit)", nullptr, nullptr);
+    GLFWmonitor* mon = glfwGetPrimaryMonitor();
+    const GLFWvidmode* mode = glfwGetVideoMode(mon);
+    GLFWwindow* window = glfwCreateWindow(mode->width, mode->height, "Black Hole", nullptr, nullptr);
     glfwSetWindowPos(window, 0, 0);
-    if (!window) {
-        fprintf(stderr, "Failed to create window\n");
-        glfwTerminate();
-        return 1;
-    }
+    if (!window) { glfwTerminate(); return 1; }
 
-    // Desktop overlay: always-on-top + click-through + exclude from capture
     {
         HWND hwnd = glfwGetWin32Window(window);
-        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        SetWindowPos(hwnd, HWND_TOPMOST, 0,0,0,0, SWP_NOMOVE|SWP_NOSIZE|SWP_SHOWWINDOW);
         LONG ex = GetWindowLong(hwnd, GWL_EXSTYLE);
-        SetWindowLong(hwnd, GWL_EXSTYLE, ex | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE );
-        // Exclude from WGC/DXGI capture (prevents feedback loop)
+        SetWindowLong(hwnd, GWL_EXSTYLE, ex|WS_EX_TRANSPARENT|WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE);
         SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
-        // Remove DWM frame borders (fullscreen borderless overlay)
-        {
-            MARGINS margins = {-1, -1, -1, -1};
-            DwmExtendFrameIntoClientArea(hwnd, &margins);
-        }
-        // Subclass window to block WM_NCACTIVATE (prevents DWM focus-loss border)
+        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        MARGINS m = {-1,-1,-1,-1}; DwmExtendFrameIntoClientArea(hwnd, &m);
+        DWMNCRENDERINGPOLICY ncrp = DWMNCRP_DISABLED;
+        DwmSetWindowAttribute(hwnd, DWMWA_NCRENDERING_POLICY, &ncrp, sizeof(ncrp));
         SetWindowSubclass(hwnd, OverlayWndProc, 1, 0);
-        // Tell DWM to never draw non-client area (borders, focus visuals)
-        {
-            DWMNCRENDERINGPOLICY ncrp = DWMNCRP_DISABLED;
-            DwmSetWindowAttribute(hwnd, DWMWA_NCRENDERING_POLICY,
-                                  &ncrp, sizeof(ncrp));
-        }
-        // Make black pixels transparent
     }
 
     glfwMakeContextCurrent(window);
     setbuf(stderr, NULL);
-    glfwSwapInterval(1);  // VSync on
+    glfwSwapInterval(1);
 
-    fprintf(stderr, "OpenGL %s, GLSL %s\n",
-        glGetString(GL_VERSION), glGetString(GL_SHADING_LANGUAGE_VERSION));
+    fprintf(stderr, "OpenGL %s, GLSL %s\n", glGetString(GL_VERSION), glGetString(GL_SHADING_LANGUAGE_VERSION));
+    if (!loadGLFunctions()) { glfwTerminate(); return 1; }
 
-    if (!loadGLFunctions()) {
-        glfwTerminate();
-        return 1;
-    }
+    // ---- Capture (WGC default) ----
+    WGCCapture wgc; DXGICapture dxgi;
+    bool useWGC = true;
+    int capW=0, capH=0; bool capOk;
+    capOk = WGC_Init(wgc); capW=wgc.width; capH=wgc.height;
+    if (!capOk) { glfwTerminate(); return 1; }
 
-    // ---- Capture init (WGC or DXGI) ----
-    WGCCapture wgc;
-    DXGICapture dxgi;
-    int capWidth = 0, capHeight = 0;
-    bool capOk = false;
-
-    if (useWGC) {
-        capOk = WGC_Init(wgc);
-        capWidth = wgc.width;
-        capHeight = wgc.height;
-    } else {
-        capOk = DXGI_Init(dxgi);
-        capWidth = dxgi.width;
-        capHeight = dxgi.height;
-    }
-    if (!capOk) {
-        fprintf(stderr, "FATAL: Capture init failed\n");
-        glfwTerminate();
-        return 1;
-    }
-
-    // ---- Texture upload init ----
     GLTextureUpload glTex;
-    if (!GLTex_Init(glTex, capWidth, capHeight)) {
-        fprintf(stderr, "FATAL: Texture init failed\n");
-        if (useWGC) WGC_Release(wgc);
-        else        DXGI_Release(dxgi);
-        glfwTerminate();
-        return 1;
-    }
-    // ---- Shader compilation (GLSL only, no SPIR-V) ----
+    if (!GLTex_Init(glTex, capW, capH)) { WGC_Release(wgc); glfwTerminate(); return 1; }
+
+    // ---- Shader ----
     std::string vertSrc = readFile("shaders/vert.glsl");
-    if (vertSrc.empty()) {
-        GLTex_Shutdown(glTex);
-        WGC_Release(wgc);
-        glfwTerminate();
-        return 1;
-    }
     std::string fragSrc;
-    if (!buildFragmentShader(fragSrc)) {
-        GLTex_Shutdown(glTex);
-        WGC_Release(wgc);
-        glfwTerminate();
-        return 1;
+    if (vertSrc.empty() || !buildFragmentShader(fragSrc)) {
+        GLTex_Shutdown(glTex); WGC_Release(wgc); glfwTerminate(); return 1;
     }
-
     GLuint program = createProgram(vertSrc, fragSrc);
-    if (!program) {
-        fprintf(stderr, "FATAL: Shader program creation failed.\n");
-        GLTex_Shutdown(glTex);
-        WGC_Release(wgc);
-        glfwTerminate();
-        return 1;
-    }
+    if (!program) { GLTex_Shutdown(glTex); WGC_Release(wgc); glfwTerminate(); return 1; }
 
-    // ---- Full-screen quad ----
-    float vertices[] = {
-        -1.0f, -1.0f,
-         1.0f, -1.0f,
-        -1.0f,  1.0f,
-         1.0f,  1.0f,
-    };
-    GLuint indices[] = { 0, 1, 2, 1, 3, 2 };
-
-    GLuint vao, vbo, ebo;
-    gl_GenVertexArrays(1, &vao);
-    gl_GenBuffers(1, &vbo);
-    gl_GenBuffers(1, &ebo);
-
+    // Full-screen quad
+    float verts[] = { -1,-1, 1,-1, -1,1, 1,1 };
+    GLuint vao, vbo;
+    gl_GenVertexArrays(1, &vao); gl_GenBuffers(1, &vbo);
     gl_BindVertexArray(vao);
     gl_BindBuffer(GL_ARRAY_BUFFER, vbo);
-    gl_BufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-    gl_BindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    gl_BufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-    gl_VertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+    gl_BufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+    gl_VertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2*sizeof(float), (void*)0);
     gl_EnableVertexAttribArray(0);
     gl_BindVertexArray(0);
 
-    // Uniform locations
-    gl_UseProgram(program);
-    GLint locResolution = gl_GetUniformLocation(program, "iResolution");
-    GLint locTime       = gl_GetUniformLocation(program, "iTime");
-    GLint locDate       = gl_GetUniformLocation(program, "iDate");
-    GLint locChannel0   = gl_GetUniformLocation(program, "iChannel0");
-    gl_UseProgram(0);
+    GLint locRes   = gl_GetUniformLocation(program, "iResolution");
+    GLint locTime  = gl_GetUniformLocation(program, "iTime");
+    GLint locDate  = gl_GetUniformLocation(program, "iDate");
+    GLint locCh0   = gl_GetUniformLocation(program, "iChannel0");
+    // GUI uniform locations (set once)
+    GLint loc_uHR  = gl_GetUniformLocation(program, "uHoleRadius");
+    GLint loc_uDG  = gl_GetUniformLocation(program, "uDiskGain");
+    GLint loc_uDT  = gl_GetUniformLocation(program, "uDiskTemp");
+    GLint loc_uEX  = gl_GetUniformLocation(program, "uExposure");
+    GLint loc_uSP  = gl_GetUniformLocation(program, "uSpeed");
+    GLint loc_uSG  = gl_GetUniformLocation(program, "uStarGain");
+    GLint loc_uDI  = gl_GetUniformLocation(program, "uDiskIncl");
 
-    // Acquire first frame before main loop (DXGI ReleaseFrame pairing)
-    if (!useWGC) {
-        ID3D11Texture2D* firstFrame = DXGI_GetFrame(dxgi);
-        if (firstFrame) firstFrame->Release();
-    }
+    gl_UseProgram(0);
 
     // ---- Main loop ----
     double startTime = glfwGetTime();
-    int frames = 0;
-    double lastFpsTime = startTime;
+    int frames = 0; double lastFps = startTime;
     char title[128];
 
-    // Give WGC a moment to start delivering frames
-    fprintf(stderr, "Waiting for first WGC frame...\n");
+    // DXGI pairing: acquire first frame before loop
+    if (!useWGC) { ID3D11Texture2D* f = DXGI_GetFrame(dxgi); if (f) f->Release(); }
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
-
-        // ESC to exit
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, GL_TRUE);
 
         // Idle mode
-        if (bhMode == MODE_IDLE) {
-            if (isIdle((DWORD)idleSec * 1000)) {
+        if (cfg.mode == 1) {
+            if (isIdle((DWORD)cfg.idleSec * 1000)) {
                 ShowWindow(glfwGetWin32Window(window), SW_SHOWNOACTIVATE);
                 glfwSetWindowOpacity(window, 1.0f);
             } else {
                 ShowWindow(glfwGetWin32Window(window), SW_HIDE);
-                Sleep(250);
-                continue;
+                Sleep(250); continue;
             }
-        } else if (bhMode == MODE_ALWAYS) {
-            if (!glfwGetWindowAttrib(window, GLFW_VISIBLE))
-                ShowWindow(glfwGetWin32Window(window), SW_SHOWNOACTIVATE);
         }
 
-        // Window / framebuffer size
-        int fbW, fbH;
-        glfwGetFramebufferSize(window, &fbW, &fbH);
+        int fbW, fbH; glfwGetFramebufferSize(window, &fbW, &fbH);
         glViewport(0, 0, fbW, fbH);
 
-        // ---- Capture -> upload (WGC or DXGI) ----
-        // DXGI: always ReleaseFrame before AcquireNextFrame (v3 pattern)
+        // Capture
         if (!useWGC) DXGI_ReleaseFrame(dxgi);
         ID3D11Texture2D* frame = useWGC ? WGC_GetFrame(wgc) : DXGI_GetFrame(dxgi);
-        static int dxgiOk = 0, dxgiMiss = 0;
-        if (!useWGC) {
-            if (frame) { dxgiOk++; }
-            else { dxgiMiss++; }
-            if ((dxgiOk + dxgiMiss) % 120 == 0)
-                fprintf(stderr, "[DXGI] %d ok, %d miss\n", dxgiOk, dxgiMiss);
-        }
-        
+
         if (frame) {
-            // Micro-delay: let GPU compositor finish large screen updates
-            D3D11_TEXTURE2D_DESC desc;
-            frame->GetDesc(&desc);
-            int fw = (int)desc.Width, fh = (int)desc.Height;
-            if (fw != glTex.width || fh != glTex.height) {
-                fprintf(stderr, "[Resize] %dx%d -> %dx%d\n",
-                        glTex.width, glTex.height, fw, fh);
-                GLTex_Resize(glTex, fw, fh);
-            }
-            // Copy to staging only if sizes match
-            if (fw == glTex.width && fh == glTex.height) {
+            D3D11_TEXTURE2D_DESC desc; frame->GetDesc(&desc);
+            int fw=(int)desc.Width, fh=(int)desc.Height;
+            if (fw!=glTex.width || fh!=glTex.height) GLTex_Resize(glTex, fw, fh);
+            if (fw==glTex.width && fh==glTex.height) {
                 D3D11_MAPPED_SUBRESOURCE mapped;
-                if ((useWGC ? WGC_CopyToStaging(wgc, frame, mapped) : DXGI_CopyToStaging(dxgi, frame, mapped))) {
+                if ((useWGC ? WGC_CopyToStaging(wgc,frame,mapped) : DXGI_CopyToStaging(dxgi,frame,mapped))) {
                     GLTex_Upload(glTex, mapped.pData, (int)mapped.RowPitch);
-                    if (useWGC) WGC_UnmapStaging(wgc);
-                    else        DXGI_UnmapStaging(dxgi);
+                    if (useWGC) WGC_UnmapStaging(wgc); else DXGI_UnmapStaging(dxgi);
                 }
             }
             frame->Release();
         }
 
-        // Update uniforms
         double now = glfwGetTime();
         float t = (float)(now - startTime);
-        float epochSec = (float)time(nullptr);
+        float ep = (float)time(nullptr);
 
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-
+        glClearColor(0,0,0,1); glClear(GL_COLOR_BUFFER_BIT);
         gl_UseProgram(program);
 
-        // Bind desktop texture to iChannel0
         gl_ActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, GLTex_GetTexture(glTex));
-        gl_Uniform1i(locChannel0, 0);
-
-        gl_Uniform3f(locResolution, (float)fbW, (float)fbH, 0.0f);
+        gl_Uniform1i(locCh0, 0);
+        gl_Uniform3f(locRes, (float)fbW, (float)fbH, 0.0f);
         gl_Uniform1f(locTime, t);
-        gl_Uniform4f(locDate, 0.0f, 0.0f, 0.0f, epochSec);
+        gl_Uniform4f(locDate, 0,0,0,ep);
+
+        // GUI parameters (set every frame — cheap uniform calls)
+        gl_Uniform1f(loc_uHR, cfg.holeRadius);
+        gl_Uniform1f(loc_uDG, cfg.diskGain);
+        gl_Uniform1f(loc_uDT, cfg.diskTemp);
+        gl_Uniform1f(loc_uEX, cfg.exposure);
+        gl_Uniform1f(loc_uSP, cfg.speed);
+        gl_Uniform1f(loc_uSG, cfg.starGain);
+        gl_Uniform1f(loc_uDI, cfg.diskIncl);
 
         gl_BindVertexArray(vao);
         gl_DrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -511,24 +358,19 @@ int main(int argc, char* argv[]) {
 
         glfwSwapBuffers(window);
 
-        // FPS counter
         frames++;
-        if (now - lastFpsTime >= 1.0) {
-            snprintf(title, sizeof(title), "Black Hole  [%d FPS]  (ESC to exit)", frames);
+        if (now - lastFps >= 1.0) {
+            snprintf(title, sizeof(title), "Black Hole [%d FPS]", frames);
             glfwSetWindowTitle(window, title);
-            frames = 0;
-            lastFpsTime = now;
+            frames=0; lastFps=now;
         }
     }
 
-    // Cleanup
     GLTex_Shutdown(glTex);
-    if (useWGC) WGC_Release(wgc);
-    else        DXGI_Release(dxgi);
+    if (useWGC) WGC_Release(wgc); else DXGI_Release(dxgi);
     gl_DeleteProgram(program);
     gl_DeleteVertexArrays(1, &vao);
     gl_DeleteBuffers(1, &vbo);
-    gl_DeleteBuffers(1, &ebo);
     glfwTerminate();
     return 0;
 }
