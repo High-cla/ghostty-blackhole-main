@@ -191,7 +191,7 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp
                                         UINT_PTR idSubclass, DWORD_PTR refData) {
     switch (msg) {
     case WM_NCACTIVATE:
-        // Tell DWM "this window is never active" 鈥?prevents the yellow
+        // Tell DWM "this window is never active" 閳?prevents the yellow
         // focus-loss border from appearing when switching to other apps.
         return FALSE;
     case WM_MOUSEACTIVATE:
@@ -413,19 +413,22 @@ int main(int argc, char* argv[]) {
         // ---- WGC capture -> PBO upload ----
         ID3D11Texture2D* frame = WGC_GetFrame(wgc);
         if (frame) {
-            D3D11_MAPPED_SUBRESOURCE mapped;
-            if (WGC_CopyToStaging(wgc, frame, mapped)) {
-                // Check for size change
-                D3D11_TEXTURE2D_DESC desc;
-                frame->GetDesc(&desc);
-                if ((int)desc.Width != glTex.width || (int)desc.Height != glTex.height) {
-                    fprintf(stderr, "[Resize] %dx%d -> %dx%d\n",
-                            glTex.width, glTex.height,
-                            (int)desc.Width, (int)desc.Height);
-                    GLTex_Resize(glTex, (int)desc.Width, (int)desc.Height);
+            // Check size BEFORE staging copy (avoid source/dest size mismatch)
+            D3D11_TEXTURE2D_DESC desc;
+            frame->GetDesc(&desc);
+            int fw = (int)desc.Width, fh = (int)desc.Height;
+            if (fw != glTex.width || fh != glTex.height) {
+                fprintf(stderr, "[Resize] %dx%d -> %dx%d\n",
+                        glTex.width, glTex.height, fw, fh);
+                GLTex_Resize(glTex, fw, fh);
+            }
+            // Copy to staging only if sizes match
+            if (fw == glTex.width && fh == glTex.height) {
+                D3D11_MAPPED_SUBRESOURCE mapped;
+                if (WGC_CopyToStaging(wgc, frame, mapped)) {
+                    GLTex_Upload(glTex, mapped.pData, (int)mapped.RowPitch);
+                    WGC_UnmapStaging(wgc);
                 }
-                GLTex_Upload(glTex, mapped.pData, (int)mapped.RowPitch);
-                WGC_UnmapStaging(wgc);
             }
             frame->Release();
         }
