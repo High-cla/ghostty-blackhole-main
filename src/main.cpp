@@ -13,9 +13,10 @@
 #include <regex>
 #include <cstring>
 #include <windows.h>
+#include <d3d11.h>
+#include <dxgi1_2.h>
 
 #include "screen_capture.h"
-#include "gl_interop.h"
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -259,6 +260,21 @@ int main(int argc, char* argv[]) {
     setbuf(stderr, NULL);
     glfwSwapInterval(1);  // VSync on
 
+    // ---- DXGI desktop capture (init after GL context) ----
+    ScreenCapture screenCap;
+    GLuint screenTex = 0;
+    if (scInit(screenCap)) {
+        glGenTextures(1, &screenTex);
+        glBindTexture(GL_TEXTURE_2D, screenTex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, screenCap.width, screenCap.height,
+                     0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
     fprintf(stderr, "OpenGL %s, GLSL %s\n",
         glGetString(GL_VERSION), glGetString(GL_SHADING_LANGUAGE_VERSION));
 
@@ -267,20 +283,6 @@ int main(int argc, char* argv[]) {
          return 1;
      }
 
-    // ---- Initialize DXGI desktop capture + WGL interop (zero-copy) ----
-    ScreenCapture screenCap;
-    GLInterop glInterop;
-    if (scInit(screenCap)) {
-        if (giInit(glInterop, screenCap.d3dDev, screenCap.d3dCtx,
-                   screenCap.width, screenCap.height)) {
-            ID3D11Texture2D* firstFrame = nullptr;
-            if (scAcquireFrame(screenCap, firstFrame) && firstFrame) {
-                giUpdate(glInterop, firstFrame);
-                firstFrame->Release();
-            }
-        }
-    }
- 
      // Build and compile shaders
      std::string vertSrc = readFile("shaders/vert.glsl");
      if (vertSrc.empty()) { glfwTerminate(); return 1; }
@@ -414,27 +416,26 @@ int main(int argc, char* argv[]) {
          glfwGetFramebufferSize(window, &fbW, &fbH);
          glViewport(0, 0, fbW, fbH);
  
-         // Capture desktop frame via DXGI -> GPU CopyResource -> shared texture
-         ID3D11Texture2D* newFrame = nullptr;
-         if (scAcquireFrame(screenCap, newFrame) && newFrame) {
-             giUpdate(glInterop, newFrame);
-             newFrame->Release();
+         // Capture desktop: DXGI Acquire -> CopyResource -> Map -> pixels
+         const unsigned char* pix = scCapture(screenCap);
+         if (pix) {
+             glBindTexture(GL_TEXTURE_2D, screenTex);
+             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
+                             screenCap.width, screenCap.height,
+                             GL_BGRA, GL_UNSIGNED_BYTE, pix);
+             glBindTexture(GL_TEXTURE_2D, 0);
          }
 
          // Update uniforms
          double now = glfwGetTime();
          float t = (float)(now - startTime);
-         // iDate.w = seconds since epoch (for pomodoro wall clock)
          float epochSec = (float)time(nullptr);
-
-         // Lock interop: required before sampling the shared texture
-         giLock(glInterop);
  
          gl_UseProgram(program);
 
          // Bind desktop texture to iChannel0 (texture unit 0)
          gl_ActiveTexture(GL_TEXTURE0);
-         glBindTexture(GL_TEXTURE_2D, giGetTexture(glInterop));
+         glBindTexture(GL_TEXTURE_2D, screenTex);
          gl_Uniform1i(locChannel0, 0);
 
          gl_Uniform3f(locResolution, (float)fbW, (float)fbH, 0.0f);
@@ -445,9 +446,6 @@ int main(int argc, char* argv[]) {
          gl_DrawArrays(GL_TRIANGLE_STRIP, 0, 4);
          gl_BindVertexArray(0);
          gl_UseProgram(0);
-
-         // Unlock interop after rendering
-         giUnlock(glInterop);
  
          glfwSwapBuffers(window);
  
@@ -462,8 +460,8 @@ int main(int argc, char* argv[]) {
      }
  
      // Cleanup
-     giShutdown(glInterop);
      scShutdown(screenCap);
+     if (screenTex) glDeleteTextures(1, &screenTex);
      gl_DeleteProgram(program);
      gl_DeleteVertexArrays(1, &vao);
      gl_DeleteBuffers(1, &vbo);
