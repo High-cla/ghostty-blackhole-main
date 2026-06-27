@@ -39,6 +39,6 @@ uniform float uPresetExpo [MAX_PRESETS];
 uniform float uPresetStar [MAX_PRESETS];
 
 uniform int uPlayMode = 0;   // 0=顺序 1=循环 2=随机
-uniform float uSlotSec = 5.25; // 每个预设播放秒数
+uniform float uSlotSec = 5.25;   // 每个预设播放秒数
 
 #define fragColor gl_FragColor

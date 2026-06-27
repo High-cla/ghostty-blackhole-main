@@ -102,10 +102,15 @@ bool GUI_ShowConfigPanel(BlackholeConfig& cfg) {
     ImGui_ImplOpenGL3_Init("#version 330");
 
     char presetName[64][64] = {};
-    for (int i = 0; i < cfg.presetCount && i < 8; i++)
-        strcpy(presetName[i], PRESET_NAMES[i]);
-    for (int i = 8; i < cfg.presetCount; i++)
-        snprintf(presetName[i], 64, "Custom %d", i + 1);
+    // Auto-load saved config (if exists)
+    if (LoadPresetsFromFile(cfg, presetName)) {
+        // loaded successfully, presetName already filled
+    } else {
+        for (int i = 0; i < cfg.presetCount && i < 8; i++)
+            strcpy(presetName[i], PRESET_NAMES[i]);
+        for (int i = 8; i < cfg.presetCount; i++)
+            snprintf(presetName[i], 64, "Custom %d", i + 1);
+    }
 
     int selPreset = 0;
     const char* modes[] = { "始终显示", "空闲检测" };
@@ -131,7 +136,6 @@ bool GUI_ShowConfigPanel(BlackholeConfig& cfg) {
         ImGui::Separator();
         ImGui::Text("模式:"); ImGui::SameLine();
         ImGui::Combo("##mode", &cfg.mode, modes, 2);
-        ImGui::Checkbox("自定义轮播", &cfg.useCustomPresets);
         if (cfg.mode == 1) {
             ImGui::SliderInt("超时(秒)", &cfg.idleSec, 10, 1800);
         }
@@ -147,7 +151,9 @@ bool GUI_ShowConfigPanel(BlackholeConfig& cfg) {
             ImGui::TextDisabled("  随机抽取");
         }
 
-        ImGui::SliderFloat("每预设时长(秒)", &cfg.slotSec, 1.0f, 30.0f, "%.1f");
+        ImGui::InputFloat("每预设时长(秒)", &cfg.slotSec, 0.5f, 5.0f, "%.1f");
+        if (cfg.slotSec < 1.0f) cfg.slotSec = 1.0f;
+        if (cfg.slotSec > 1800.0f) cfg.slotSec = 1800.0f;
         ImGui::Separator();
         ImGui::Text("预设列表 (%d个)", cfg.presetCount);
 

@@ -19,7 +19,7 @@ struct DiskPreset {
 };
 
 struct BlackholeConfig {
-    int   mode       = 0;
+    int   mode       = 1;
     int   idleSec    = 300;
     float holeRadius = -1.0f;
     float diskGain   = -1.0f;
@@ -31,8 +31,7 @@ struct BlackholeConfig {
 
     int   presetCount = 0;
     DiskPreset presets[64];
-    bool  useCustomPresets = false;
-    int   playMode        = 0;    // 0=顺序 1=循环 2=随机
+    int   playMode        = 1;    // 0=顺序 1=循环 2=随机
     float slotSec        = 5.25f; // 每个预设播放秒数
     bool  confirmed  = false;
 };

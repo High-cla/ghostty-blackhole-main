@@ -194,20 +194,17 @@ static bool buildFragmentShader(std::string& out) {
                     "        int n = int(clamp(float(uPresetCount), 1.0, float(MAX_PRESETS)));\n"
                     "        float f; int i0, i1;\n"
                     "        if (uPlayMode == 0) {\n"
-                    "            // Sequential: continuous time, stop at last\n"
                     "            float raw = iTime / max(uSlotSec, 0.5);\n"
                     "            f = smoothstep(1.0 - DEMO_XFADE, 1.0, fract(raw));\n"
                     "            i0 = int(min(raw, float(n) - 0.001));\n"
                     "            i1 = int(min(raw + 1.0, float(n) - 0.001));\n"
                     "        } else if (uPlayMode == 2) {\n"
-                    "            // Random: continuous time, infinite unique\n"
                     "            float raw = iTime / max(uSlotSec, 0.5);\n"
                     "            f = smoothstep(1.0 - DEMO_XFADE, 1.0, fract(raw));\n"
                     "            int slot = int(raw);\n"
                     "            i0 = int(fract(sin(float(slot) * 127.1 + 311.7) * 43758.5453) * float(n));\n"
                     "            i1 = int(fract(sin(float(slot + 1) * 127.1 + 311.7) * 43758.5453) * float(n));\n"
                     "        } else {\n"
-                    "            // Loop: continuous time, modulo indices (no jump at wrap)\n"
                     "            float raw = iTime / max(uSlotSec, 0.5);\n"
                     "            f = smoothstep(1.0 - DEMO_XFADE, 1.0, fract(raw));\n"
                     "            i0 = int(raw) % n;\n"
@@ -373,6 +370,7 @@ int main(int argc, char* argv[]) {
 
     // ---- Main loop ----
     double startTime = glfwGetTime();
+    float idleStart = 0.0f;
     int frames = 0; double lastFps = startTime;
     char title[128];
 
@@ -384,12 +382,18 @@ int main(int argc, char* argv[]) {
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, GL_TRUE);
 
-        // Idle mode
+        // Idle mode: track visibility for fresh restart each trigger
+        static bool idleWasVisible = false;
         if (cfg.mode == 1) {
             if (isIdle((DWORD)cfg.idleSec * 1000)) {
                 ShowWindow(glfwGetWin32Window(window), SW_SHOWNOACTIVATE);
                 glfwSetWindowOpacity(window, 1.0f);
+                if (!idleWasVisible) {
+                    idleStart = (float)(glfwGetTime() - startTime);
+                }
+                idleWasVisible = true;
             } else {
+                idleWasVisible = false;
                 ShowWindow(glfwGetWin32Window(window), SW_HIDE);
                 Sleep(250); continue;
             }
@@ -420,6 +424,7 @@ int main(int argc, char* argv[]) {
         float t = (float)(now - startTime);
         float ep = (float)time(nullptr);
 
+
         glClearColor(0,0,0,1); glClear(GL_COLOR_BUFFER_BIT);
         gl_UseProgram(program);
 
@@ -427,7 +432,7 @@ int main(int argc, char* argv[]) {
         glBindTexture(GL_TEXTURE_2D, GLTex_GetTexture(glTex));
         gl_Uniform1i(locCh0, 0);
         gl_Uniform3f(locRes, (float)fbW, (float)fbH, 0.0f);
-        gl_Uniform1f(locTime, t);
+        gl_Uniform1f(locTime, t - idleStart);
         gl_Uniform4f(locDate, 0,0,0,ep);
 
         // GUI parameters (set every frame 闂?cheap uniform calls)
@@ -441,7 +446,7 @@ int main(int argc, char* argv[]) {
         gl_Uniform1i(loc_uPM, cfg.playMode);
         gl_Uniform1f(loc_uSlot, cfg.slotSec);
         // Upload preset uniforms
-        gl_Uniform1i(loc_uPC, cfg.useCustomPresets ? cfg.presetCount : 0);
+        gl_Uniform1i(loc_uPC, cfg.presetCount);
         {
             float buf[64];
             for (int i = 0; i < cfg.presetCount; i++) buf[i] = cfg.presets[i].temp;
