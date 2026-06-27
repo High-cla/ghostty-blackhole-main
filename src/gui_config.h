@@ -33,6 +33,7 @@ struct BlackholeConfig {
     DiskPreset presets[64];
     bool  useCustomPresets = false;
     int   playMode        = 0;    // 0=顺序 1=循环 2=随机
+    float slotSec        = 5.25f; // 每个预设播放秒数
     bool  confirmed  = false;
 };
 

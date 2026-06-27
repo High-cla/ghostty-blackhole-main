@@ -147,6 +147,7 @@ bool GUI_ShowConfigPanel(BlackholeConfig& cfg) {
             ImGui::TextDisabled("  随机抽取");
         }
 
+        ImGui::SliderFloat("每预设时长(秒)", &cfg.slotSec, 1.0f, 30.0f, "%.1f");
         ImGui::Separator();
         ImGui::Text("预设列表 (%d个)", cfg.presetCount);
 

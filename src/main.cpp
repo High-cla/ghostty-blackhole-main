@@ -194,24 +194,24 @@ static bool buildFragmentShader(std::string& out) {
                     "        int n = int(clamp(float(uPresetCount), 1.0, float(MAX_PRESETS)));\n"
                     "        float f; int i0, i1;\n"
                     "        if (uPlayMode == 0) {\n"
-                    "            // Sequential: no time wrap, stop at last\n"
-                    "            float u = iTime / DEMO_SEC * float(n);\n"
-                    "            f = smoothstep(1.0 - DEMO_XFADE, 1.0, fract(u));\n"
-                    "            i0 = int(min(u, float(n) - 0.001));\n"
-                    "            i1 = int(min(u + 1.0, float(n) - 0.001));\n"
+                    "            // Sequential: continuous time, stop at last\n"
+                    "            float raw = iTime / max(uSlotSec, 0.5);\n"
+                    "            f = smoothstep(1.0 - DEMO_XFADE, 1.0, fract(raw));\n"
+                    "            i0 = int(min(raw, float(n) - 0.001));\n"
+                    "            i1 = int(min(raw + 1.0, float(n) - 0.001));\n"
                     "        } else if (uPlayMode == 2) {\n"
-                    "            // Random: no time wrap, infinite unique\n"
-                    "            float u = iTime / DEMO_SEC * float(n);\n"
-                    "            f = smoothstep(1.0 - DEMO_XFADE, 1.0, fract(u));\n"
-                    "            int slot = int(u);\n"
+                    "            // Random: continuous time, infinite unique\n"
+                    "            float raw = iTime / max(uSlotSec, 0.5);\n"
+                    "            f = smoothstep(1.0 - DEMO_XFADE, 1.0, fract(raw));\n"
+                    "            int slot = int(raw);\n"
                     "            i0 = int(fract(sin(float(slot) * 127.1 + 311.7) * 43758.5453) * float(n));\n"
                     "            i1 = int(fract(sin(float(slot + 1) * 127.1 + 311.7) * 43758.5453) * float(n));\n"
                     "        } else {\n"
-                    "            // Loop: wrap time, cycle forever\n"
-                    "            float u = mod(iTime, DEMO_SEC) / DEMO_SEC * float(n);\n"
-                    "            f = smoothstep(1.0 - DEMO_XFADE, 1.0, fract(u));\n"
-                    "            i0 = int(u) % n;\n"
-                    "            i1 = (int(u) + 1) % n;\n"
+                    "            // Loop: continuous time, modulo indices (no jump at wrap)\n"
+                    "            float raw = iTime / max(uSlotSec, 0.5);\n"
+                    "            f = smoothstep(1.0 - DEMO_XFADE, 1.0, fract(raw));\n"
+                    "            i0 = int(raw) % n;\n"
+                    "            i1 = (int(raw) + 1) % n;\n"
                     "        }\n"
                     "        return mixLook(demoPreset(i0), demoPreset(i1), f);\n"
                     "    } else {\n"
@@ -351,6 +351,7 @@ int main(int argc, char* argv[]) {
     GLint loc_uSG  = gl_GetUniformLocation(program, "uStarGain");
     GLint loc_uDI  = gl_GetUniformLocation(program, "uDiskIncl");
     GLint loc_uPM  = gl_GetUniformLocation(program, "uPlayMode");
+    GLint loc_uSlot = gl_GetUniformLocation(program, "uSlotSec");
     // Preset uniform locations
     GLint loc_uPC   = gl_GetUniformLocation(program, "uPresetCount");
     GLint loc_uPT   = gl_GetUniformLocation(program, "uPresetTemp");
@@ -438,6 +439,7 @@ int main(int argc, char* argv[]) {
         gl_Uniform1f(loc_uSG, cfg.starGain);
         gl_Uniform1f(loc_uDI, cfg.diskIncl);
         gl_Uniform1i(loc_uPM, cfg.playMode);
+        gl_Uniform1f(loc_uSlot, cfg.slotSec);
         // Upload preset uniforms
         gl_Uniform1i(loc_uPC, cfg.useCustomPresets ? cfg.presetCount : 0);
         {
