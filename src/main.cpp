@@ -267,6 +267,17 @@ struct IAudioMeterInformation2 : IUnknown {
 // Check if process name indicates a video-capable app
 static bool isVideoProcess(const char* name) {
     if (!name || !name[0]) return false;
+    // Exclusions: wallpaper / audio-only / system processes
+    if (strstr(name, "wallpaper") || strstr(name, "lively") ||
+        strstr(name, "rainmeter") || strstr(name, "spotify") ||
+        strstr(name, "music") || strstr(name, "netease") ||
+        strstr(name, "qqmusic") || strstr(name, "kugou") ||
+        strstr(name, "foobar") || strstr(name, "aimp") ||
+        strstr(name, "audacity") || strstr(name, "obs") ||
+        strstr(name, "discord") || strstr(name, "teams") ||
+        strstr(name, "zoom") || strstr(name, "wechat") ||
+        strstr(name, "explorer"))
+        return false;
     // Dedicated video players
     if (strstr(name, "vlc") || strstr(name, "mpv") || strstr(name, "potplayer") ||
         strstr(name, "mpc-hc") || strstr(name, "mpc-be") || strstr(name, "wmplayer") ||
