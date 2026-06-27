@@ -6,6 +6,7 @@
 #include <GLFW/glfw3.h>
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>
 
 static const DiskPreset DEFAULT_PRESETS[8] = {
     {5500, 1.50f, 0.35f, 1.8f, 8.0f, 0.90f, 0.60f, 2.5f, 2.2f, 1.6f, 7.0f, 5.0f, 1.40f, 0.0f},
@@ -27,6 +28,53 @@ static const char* PRESET_NAMES[8] = {
     "Inferno", "Gargantua", "M87* Donut", "Face-on Ember",
     "Quasar", "Blazar", "Pure Lens", "Inferno 2"
 };
+
+// ---- Clipboard for copy/paste ----
+static DiskPreset g_clipboard;
+static char       g_clipName[64] = "";
+static bool       g_hasClipboard = false;
+
+// ---- Save/Load presets to local file ----
+void SavePresetsToFile(const BlackholeConfig& cfg, const char names[16][64]) {
+    FILE* f = fopen("blackhole_presets.txt", "w");
+    if (!f) return;
+    fprintf(f, "# Blackhole Presets\n");
+    fprintf(f, "%d\n", cfg.presetCount);
+    for (int i = 0; i < cfg.presetCount; i++) {
+        const DiskPreset& p = cfg.presets[i];
+        fprintf(f, "%s\n", names[i]);
+        fprintf(f, "%.0f %.2f %.2f %.1f %.1f %.2f %.2f %.1f %.2f %.2f %.1f %.1f %.2f %.3f\n",
+            p.temp, p.incl, p.roll, p.inner, p.outer,
+            p.opac, p.dopp, p.beam, p.gain, p.contr,
+            p.wind, p.speed, p.expo, p.star);
+    }
+    fclose(f);
+}
+
+bool LoadPresetsFromFile(BlackholeConfig& cfg, char names[16][64]) {
+    FILE* f = fopen("blackhole_presets.txt", "r");
+    if (!f) return false;
+    char line[256];
+    if (!fgets(line, sizeof(line), f)) { fclose(f); return false; }
+    if (!fgets(line, sizeof(line), f)) { fclose(f); return false; }
+    int count = atoi(line);
+    if (count < 1 || count > 16) { fclose(f); return false; }
+    for (int i = 0; i < count; i++) {
+        if (!fgets(line, sizeof(line), f)) break;
+        line[strcspn(line, "\r\n")] = 0;
+        strncpy(names[i], line, 63);
+        names[i][63] = 0;
+        if (!fgets(line, sizeof(line), f)) break;
+        DiskPreset& p = cfg.presets[i];
+        sscanf(line, "%f %f %f %f %f %f %f %f %f %f %f %f %f %f",
+            &p.temp, &p.incl, &p.roll, &p.inner, &p.outer,
+            &p.opac, &p.dopp, &p.beam, &p.gain, &p.contr,
+            &p.wind, &p.speed, &p.expo, &p.star);
+    }
+    cfg.presetCount = count;
+    fclose(f);
+    return true;
+}
 
 bool GUI_ShowConfigPanel(BlackholeConfig& cfg) {
     if (cfg.presetCount == 0) InitDefaultPresets(cfg);
@@ -140,6 +188,17 @@ bool GUI_ShowConfigPanel(BlackholeConfig& cfg) {
             cfg.presetCount = 8;
             selPreset = 0;
         }
+
+        ImGui::Spacing();
+        if (ImGui::Button("保存配置", ImVec2(120,30))) {
+            SavePresetsToFile(cfg, presetName);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("加载配置", ImVec2(120,30))) {
+            if (LoadPresetsFromFile(cfg, presetName)) {
+                selPreset = 0;
+            }
+        }
         ImGui::EndChild();
 
         // Right panel: edit selected preset
@@ -153,6 +212,25 @@ bool GUI_ShowConfigPanel(BlackholeConfig& cfg) {
 
         // Name editor
         ImGui::InputText("名称", presetName[selPreset], 64);
+        ImGui::SameLine();
+        if (ImGui::Button("复制", ImVec2(45, 0))) {
+            g_clipboard = p;
+            strncpy(g_clipName, presetName[selPreset], 63);
+            g_clipName[63] = 0;
+            g_hasClipboard = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("粘贴", ImVec2(45, 0))) {
+            if (g_hasClipboard) {
+                p = g_clipboard;
+                strncpy(presetName[selPreset], g_clipName, 63);
+                presetName[selPreset][63] = 0;
+            }
+        }
+        if (g_hasClipboard) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("(已复制)");
+        }
         ImGui::Separator();
 
         // Parameter grid (2 columns)
