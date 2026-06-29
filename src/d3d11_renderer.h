@@ -6,6 +6,7 @@
 #include <d3d11.h>
 #include <dxgi.h>
 #include <string>
+#include <deque>
 
 class D3D11Renderer : public IRenderer {
 public:
@@ -63,4 +64,8 @@ private:
     bool active_ = false;
     int  width_  = 0;
     int  height_ = 0;
+
+    // Frame queue: decouple WGC pool recycling from GPU async pipeline
+    std::deque<ID3D11Texture2D*> frameQueue_;
+    static constexpr int kFrameQueueDepth = 2;
 };

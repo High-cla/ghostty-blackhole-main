@@ -1,4 +1,4 @@
-// d3d11_renderer.cpp  D3D11 渲染器实现
+﻿// d3d11_renderer.cpp  D3D11 渲染器实现
 // GPU-only 管线: WGC frame → CopyResource → HLSL Pixel Shader → SwapChain Present
 #include "d3d11_renderer.h"
 #include <cstdio>
@@ -114,44 +114,58 @@ void D3D11Renderer::Render(const TextureFrame& frame,
                            const BlackHoleUniforms& uniforms) {
     if (!active_) return;
 
-    // 1. 如果需要, 调整桌面纹理大小
+    // 1. Push WGC frame to queue, hold reference to prevent pool recycling
     if (frame.valid && frame.d3dTex) {
-        D3D11_TEXTURE2D_DESC desc;
-        frame.d3dTex->GetDesc(&desc);
-        if ((int)desc.Width != texWidth_ || (int)desc.Height != texHeight_) {
-            // 重新创建桌面纹理
-            if (desktopSRV_) { desktopSRV_->Release(); desktopSRV_ = nullptr; }
-            if (desktopTex_) { desktopTex_->Release(); desktopTex_ = nullptr; }
-
-            D3D11_TEXTURE2D_DESC td = {};
-            td.Width          = desc.Width;
-            td.Height         = desc.Height;
-            td.MipLevels      = 1;
-            td.ArraySize      = 1;
-            td.Format         = desc.Format;
-            td.SampleDesc.Count = 1;
-            td.Usage          = D3D11_USAGE_DEFAULT;
-            td.BindFlags      = D3D11_BIND_SHADER_RESOURCE;
-
-            HRESULT hr = device_->CreateTexture2D(&td, nullptr, &desktopTex_);
-            if (FAILED(hr)) return;
-
-            D3D11_SHADER_RESOURCE_VIEW_DESC srvd = {};
-            srvd.Format                    = td.Format;
-            srvd.ViewDimension             = D3D11_SRV_DIMENSION_TEXTURE2D;
-            srvd.Texture2D.MipLevels       = 1;
-            srvd.Texture2D.MostDetailedMip = 0;
-
-            hr = device_->CreateShaderResourceView(desktopTex_, &srvd, &desktopSRV_);
-            if (FAILED(hr)) return;
-
-            texWidth_  = desc.Width;
-            texHeight_ = desc.Height;
-        }
-
-        // GPU-only: CopyResource 从 WGC 帧到桌面纹理
-        context_->CopyResource(desktopTex_, frame.d3dTex);
+        frame.d3dTex->AddRef();
+        frameQueue_.push_back(frame.d3dTex);
     }
+
+    // 2. Wait for enough buffered frames before rendering
+    //    WGC recycles its 3 pool textures; deferring 1-2 frames ensures
+    //    GPU CopyResource reads stable data, not overwritten by next capture.
+    if (frameQueue_.size() < kFrameQueueDepth)
+        return;
+
+    // 3. Pop oldest stable frame (WGC will not touch it anymore)
+    ID3D11Texture2D* stableTex = frameQueue_.front();
+    frameQueue_.pop_front();
+
+    // 4. Resize desktop texture if needed
+    D3D11_TEXTURE2D_DESC desc;
+    stableTex->GetDesc(&desc);
+    if ((int)desc.Width != texWidth_ || (int)desc.Height != texHeight_) {
+        if (desktopSRV_) { desktopSRV_->Release(); desktopSRV_ = nullptr; }
+        if (desktopTex_) { desktopTex_->Release(); desktopTex_ = nullptr; }
+
+        D3D11_TEXTURE2D_DESC td = {};
+        td.Width          = desc.Width;
+        td.Height         = desc.Height;
+        td.MipLevels      = 1;
+        td.ArraySize      = 1;
+        td.Format         = desc.Format;
+        td.SampleDesc.Count = 1;
+        td.Usage          = D3D11_USAGE_DEFAULT;
+        td.BindFlags      = D3D11_BIND_SHADER_RESOURCE;
+
+        HRESULT hr = device_->CreateTexture2D(&td, nullptr, &desktopTex_);
+        if (FAILED(hr)) { stableTex->Release(); return; }
+
+        D3D11_SHADER_RESOURCE_VIEW_DESC srvd = {};
+        srvd.Format                    = td.Format;
+        srvd.ViewDimension             = D3D11_SRV_DIMENSION_TEXTURE2D;
+        srvd.Texture2D.MipLevels       = 1;
+        srvd.Texture2D.MostDetailedMip = 0;
+
+        hr = device_->CreateShaderResourceView(desktopTex_, &srvd, &desktopSRV_);
+        if (FAILED(hr)) { stableTex->Release(); return; }
+
+        texWidth_  = desc.Width;
+        texHeight_ = desc.Height;
+    }
+
+    // 5. Copy stable WGC frame to desktop texture (GPU-only)
+    context_->CopyResource(desktopTex_, stableTex);
+    stableTex->Release();
 
     // 2. 更新 Constant Buffer
     if (constBuf_) {
@@ -488,4 +502,10 @@ void D3D11Renderer::CleanupResources() {
     if (quadVB_)        { quadVB_->Release();         quadVB_        = nullptr; }
     if (rtv_)           { rtv_->Release();            rtv_           = nullptr; }
     if (swapChain_)     { swapChain_->Release();      swapChain_     = nullptr; }
+
+    // Drain frame queue (release held WGC texture references)
+    while (!frameQueue_.empty()) {
+        frameQueue_.front()->Release();
+        frameQueue_.pop_front();
+    }
 }

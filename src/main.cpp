@@ -1,9 +1,9 @@
-// blackhole standalone  Windows OpenGL host for blackhole.glsl
+﻿// blackhole standalone  Windows OpenGL host for blackhole.glsl
 // v5: ImGui config panel + uniform-overridable shader params
 // Build: Ctrl+Shift+B in VS Code
-// 定义 BLACKHOLE_USE_D3D11 以切换到 D3D11 渲染路径
-// #define BLACKHOLE_USE_D3D11
 
+// D3D11: 取消注释下行切换渲染路径
+// #define BLACKHOLE_USE_D3D11
 
 #include <cstdio>
 #include <cstdlib>
@@ -36,7 +36,9 @@
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
+#ifndef BLACKHOLE_USE_D3D11
 #include <GL/gl.h>
+#endif
 #include <mmdeviceapi.h>
 #include <audiopolicy.h>
 #include <endpointvolume.h>
@@ -123,7 +125,7 @@ static bool loadGLFunctions() {
     LOAD_GL_FUNC(DeleteProgram);
     return true;
 }
-#endif // !BLACKHOLE_USE_D3D11 (GL functions)
+#endif
 
 #ifndef BLACKHOLE_USE_D3D11
 static std::string readFile(const char* path) {
@@ -260,7 +262,7 @@ static bool buildFragmentShader(std::string& out) {
           "\nvoid main() { vec4 c; vec2 fc = vec2(gl_FragCoord.x, iResolution.y - gl_FragCoord.y); mainImage(c, fc); fragColor = c; }\n";
     return true;
 }
-#endif // !BLACKHOLE_USE_D3D11 (shader compilation)
+#endif
 
 // IAudioMeterInformation GUID (missing from MinGW headers)
 static const GUID IID_IAudioMeterInformation2 = {0xC02216F6,0x8C67,0x4B5B,{0x9D,0x00,0xD0,0x08,0xE7,0x3E,0x00,0x64}};
@@ -566,7 +568,7 @@ int main(int argc, char* argv[]) {
     }
 
 
-    // === OpenGL/WGL 渲染路径 ===
+    // === OpenGL/WGL ===
 #ifndef BLACKHOLE_USE_D3D11
     // ---- Create fullscreen black hole window via Win32 + WGL ----
     char winTitle[64];
@@ -746,93 +748,31 @@ int main(int argc, char* argv[]) {
     gl_DeleteVertexArrays(1, &vao);
     gl_DeleteBuffers(1, &vbo);
     Win32GL_Shutdown(wgl);
-#else // BLACKHOLE_USE_D3D11
-    // === D3D11 渲染路径 ===
+#else
     {
-        char winTitle[64];
-        snprintf(winTitle, sizeof(winTitle), "BH_D3D11_%u", GetCurrentProcessId());
-
         Win32Window win;
-        if (!Win32Window_Init(win, winTitle, 0, 0, 0, 0)) return 1;
+        if (!Win32Window_Init(win, "Black Hole [D3D11]", 0, 0, 0, 0)) return 1;
         Win32Window_ShowSystemCursor(false);
-
         int fbW = win.width, fbH = win.height;
-
-        WGCCapture wgc; DXGICapture dxgi;
-        bool useWGC = true;
-        int capW=0, capH=0; bool capOk;
-        capOk = WGC_Init(wgc); capW=wgc.width; capH=wgc.height;
-        if (!capOk) { Win32Window_Shutdown(win); return 1; }
-
-        D3D11Renderer renderer;
-        if (!renderer.Init(win.hwnd, fbW, fbH, wgc.d3dDev, wgc.d3dCtx)) {
-            WGC_Release(wgc); Win32Window_Shutdown(win); return 1;
-        }
-
-        // ---- Main loop ----
-        double startTime = Win32Window_GetTime();
-        int frames = 0; double lastFps = startTime;
-        char title[128];
-
+        WGCCapture wgc; DXGICapture dxgi; bool useWGC=true;
+        if (!WGC_Init(wgc)) { Win32Window_Shutdown(win); return 1; }
+        D3D11Renderer r;
+        if (!r.Init(win.hwnd, fbW, fbH, wgc.d3dDev, wgc.d3dCtx)) { WGC_Release(wgc); Win32Window_Shutdown(win); return 1; }
+        double st = Win32Window_GetTime(); int fr=0; double lf=st; char tt[128];
         while (Win32Window_PollEvents(win)) {
-            ID3D11Texture2D* frame = WGC_GetFrame(wgc);
-
-            TextureFrame tf = {};
-            if (frame) { tf.d3dTex = frame; tf.valid = true; }
-
-            double now = Win32Window_GetTime();
-            float t = (float)(now - startTime);
-            float ep = (float)time(nullptr);
-
+            ID3D11Texture2D* frTex = WGC_GetFrame(wgc);
+            if (!frTex) continue;
+            TextureFrame tf = {}; tf.d3dTex=frTex; tf.valid=true;
+            double nw = Win32Window_GetTime();
+            float tm=(float)(nw-st), ep=(float)time(nullptr);
             BlackHoleUniforms u = {};
-            u.iResolution[0] = (float)fbW;
-            u.iResolution[1] = (float)fbH;
-            u.iTime = t;
-            u.iDate[3] = ep;
-            u.holeRadius = cfg.holeRadius;
-            u.diskGain   = cfg.diskGain;
-            u.diskTemp   = cfg.diskTemp;
-            u.exposure   = cfg.exposure;
-            u.speed      = cfg.spd;
-            u.starGain   = cfg.starGain;
-            u.diskIncl   = cfg.diskIncl;
-            u.playMode   = cfg.playMode;
-            u.slotSec    = cfg.slotSec;
-            u.presetCount = cfg.presetCount;
-            for (int i = 0; i < cfg.presetCount && i < 64; i++) {
-                u.presetTemp[i]  = cfg.presets[i].temp;
-                u.presetIncl[i]  = cfg.presets[i].incl;
-                u.presetRoll[i]  = cfg.presets[i].roll;
-                u.presetInner[i] = cfg.presets[i].inner;
-                u.presetOuter[i] = cfg.presets[i].outer;
-                u.presetOpac[i]  = cfg.presets[i].opac;
-                u.presetDopp[i]  = cfg.presets[i].dopp;
-                u.presetBeam[i]  = cfg.presets[i].beam;
-                u.presetGain[i]  = cfg.presets[i].gain;
-                u.presetContr[i] = cfg.presets[i].contr;
-                u.presetWind[i]  = cfg.presets[i].wind;
-                u.presetSpeed[i] = cfg.presets[i].speed;
-                u.presetExpo[i]  = cfg.presets[i].expo;
-                u.presetStar[i]  = cfg.presets[i].star;
-            }
-
-            renderer.Render(tf, u);
-
-            if (frame) frame->Release();
-
-            frames++;
-            if (now - lastFps >= 1.0) {
-                snprintf(title, sizeof(title), "Black Hole [D3D11] [%d FPS]", frames);
-                Win32Window_SetTitle(win, title);
-                frames=0; lastFps=now;
-            }
+            u.iResolution[0]=(float)fbW; u.iResolution[1]=(float)fbH; u.iTime=tm; u.iDate[3]=ep;
+            u.holeRadius=cfg.holeRadius; u.diskGain=cfg.diskGain; u.diskTemp=cfg.diskTemp; u.exposure=cfg.exposure; u.speed=cfg.spd; u.starGain=cfg.starGain; u.diskIncl=cfg.diskIncl; u.playMode=cfg.playMode; u.slotSec=cfg.slotSec; u.presetCount=cfg.presetCount;
+            for(int i=0;i<cfg.presetCount&&i<64;i++){u.presetTemp[i]=cfg.presets[i].temp;u.presetIncl[i]=cfg.presets[i].incl;u.presetRoll[i]=cfg.presets[i].roll;u.presetInner[i]=cfg.presets[i].inner;u.presetOuter[i]=cfg.presets[i].outer;u.presetOpac[i]=cfg.presets[i].opac;u.presetDopp[i]=cfg.presets[i].dopp;u.presetBeam[i]=cfg.presets[i].beam;u.presetGain[i]=cfg.presets[i].gain;u.presetContr[i]=cfg.presets[i].contr;u.presetWind[i]=cfg.presets[i].wind;u.presetSpeed[i]=cfg.presets[i].speed;u.presetExpo[i]=cfg.presets[i].expo;u.presetStar[i]=cfg.presets[i].star;}
+            r.Render(tf, u);
         }
-
-        renderer.Shutdown();
-        if (useWGC) WGC_Release(wgc); else DXGI_Release(dxgi);
-        Win32Window_ShowSystemCursor(true);
-        Win32Window_Shutdown(win);
+        r.Shutdown(); if(useWGC)WGC_Release(wgc);else DXGI_Release(dxgi); Win32Window_ShowSystemCursor(true); Win32Window_Shutdown(win);
     }
-#endif // BLACKHOLE_USE_D3D11
+#endif
     return 0;
 }

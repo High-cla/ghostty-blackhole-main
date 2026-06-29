@@ -3,13 +3,13 @@
 
 # compile CXX with C:/msys64/ucrt64/bin/c++.exe
 # compile RC with C:/msys64/ucrt64/bin/windres.exe
-CXX_DEFINES = -DBLACKHOLE_USE_D3D11 -DGLFW_DLL
+CXX_DEFINES = -DGLFW_DLL
 
 CXX_INCLUDES = 
 
 CXX_FLAGS = -std=gnu++17 -fexec-charset=UTF-8
 
-RC_DEFINES = -DBLACKHOLE_USE_D3D11 -DGLFW_DLL
+RC_DEFINES = -DGLFW_DLL
 
 RC_INCLUDES = -I C:\msys64\ucrt64\include
 

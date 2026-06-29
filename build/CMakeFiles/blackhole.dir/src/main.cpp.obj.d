@@ -417,10 +417,6 @@ CMakeFiles/blackhole.dir/src/main.cpp.obj: \
  C:/msys64/ucrt64/include/GL/gl.h \
  C:\Test_Program\VS_Code\ghostty-blackhole-main\src\gui_config.h \
  C:\Test_Program\VS_Code\ghostty-blackhole-main\src\win32_gl.h \
- C:\Test_Program\VS_Code\ghostty-blackhole-main\src\d3d11_renderer.h \
- C:\Test_Program\VS_Code\ghostty-blackhole-main\src\renderer_interface.h \
- C:\Test_Program\VS_Code\ghostty-blackhole-main\src\texture_source.h \
- C:\Test_Program\VS_Code\ghostty-blackhole-main\src\win32_window.h \
  C:/msys64/ucrt64/include/GLFW/glfw3.h \
  C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/15.2.0/include/stdint.h \
  C:/msys64/ucrt64/include/stdint.h \
@@ -436,4 +432,6 @@ CMakeFiles/blackhole.dir/src/main.cpp.obj: \
  C:/msys64/ucrt64/include/ksmedia.h \
  C:/msys64/ucrt64/include/endpointvolume.h \
  C:/msys64/ucrt64/include/devicetopology.h \
- C:/msys64/ucrt64/include/tlhelp32.h
+ C:/msys64/ucrt64/include/tlhelp32.h \
+ C:/msys64/ucrt64/include/GL/glcorearb.h \
+ C:/msys64/ucrt64/include/KHR/khrplatform.h

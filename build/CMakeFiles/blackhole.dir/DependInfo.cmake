@@ -13,7 +13,6 @@ set(CMAKE_DEPENDS_CHECK_RC
 
 # Preprocessor definitions for this target.
 set(CMAKE_TARGET_DEFINITIONS_RC
-  "BLACKHOLE_USE_D3D11"
   "GLFW_DLL"
   )
 

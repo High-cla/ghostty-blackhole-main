@@ -153,3 +153,72 @@ OpenGLRenderer   D3D11Renderer
   - [x] OpenGL 路径编译通过 ✅
   - [x] D3D11 路径编译通过 ✅ (零错误零警告)
 - [ ] 第四阶段: 运行时测试验证
+
+---
+
+## 修复记录: 编译错误 — d3d11_renderer.cpp 多余 `}` (2026-06-29)
+
+### 问题
+`d3d11_renderer.cpp` 第 154 行有一个多余的 `}`，是之前删除 GPU fence 代码时残留的。
+
+```cpp
+150:         }            // 关闭 if (size changed)
+151:
+152:         // GPU-only: CopyResource...
+153:         context_->CopyResource(desktopTex_, frame.d3dTex);
+154:         }            // ← ❌ 多余！残留自已删除的 fence 代码
+155:     }                // 关闭 if (frame.valid)
+```
+
+### 修复
+删除第 154 行多余 `}`。
+
+### 结果
+编译通过 ✅，零错误零警告。可以 F5 运行测试。
+
+---
+
+## 修复记录: 帧队列解耦 WGC 与 D3D11 GPU 管线 (2026-06-29)
+
+### 问题诊断
+WGC 帧池只有 3 个纹理，循环复用。当前流程存在竞争条件：
+
+```
+CPU: CopyResource(dest, WGC_frame) → 把命令排入 GPU 队列
+CPU: frTex->Release()             → WGC 立即复用此纹理写入新帧
+GPU: 几毫秒后才执行 CopyResource → 源纹理已被覆盖！
+```
+
+导致：冻结帧、残影、闪烁、UI拖影。
+
+### 修复方案
+引入帧缓冲队列（2 帧深度），延迟消费 WGC 帧：
+
+1. 每帧将 WGC 帧 AddRef 后入队
+2. 队列满 2 帧后才开始渲染
+3. 弹出最旧帧 → CopyResource → Release（此时 WGC 已不再触碰此纹理）
+
+这样 GPU CopyResource 读取的是 WGC 早已写完、不会再被覆盖的稳定纹理。
+
+### 修改文件
+- `src/d3d11_renderer.h` — 添加 `#include <deque>`、`frameQueue_` 成员、`kFrameQueueDepth` 常量
+- `src/d3d11_renderer.cpp` — Render() 改为帧队列模式；CleanupResources() 排空队列
+- `src/main.cpp` — 移除 D3D11 路径中的 `frTex->Release()`（渲染器自行管理生命周期）
+
+### 编译结果
+✅ 零错误零警告
+
+---
+
+## 回退记录: D3D11 → OpenGL+WGC (2026-06-29)
+
+### 原因
+D3D11 渲染路径存在 WGC 帧池复用与 GPU 异步管线的竞争条件，帧队列方案虽理论上正确但在当前 Windows/WGC 版本下调试成本过高。决定回退到稳定的 OpenGL+WGC 方案。
+
+### 修改
+- `CMakeLists.txt` — 注释 `target_compile_definitions(blackhole PRIVATE BLACKHOLE_USE_D3D11)`
+- D3D11 渲染器代码完整保留（`d3d11_renderer.h/cpp`, `win32_window.h/cpp`），可随时重新启用
+- OpenGL 路径（GLFW + Win32GL + WGC staging copy）完整可用
+
+### 编译结果
+✅ 零错误零警告，OpenGL 路径作为默认构建

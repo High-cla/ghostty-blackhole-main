@@ -337,6 +337,10 @@ CMakeFiles/blackhole.dir/src/d3d11_renderer.cpp.obj: \
  C:/msys64/ucrt64/include/c++/15.2.0/bits/uses_allocator.h \
  C:/msys64/ucrt64/include/c++/15.2.0/bits/uses_allocator_args.h \
  C:/msys64/ucrt64/include/c++/15.2.0/tuple \
+ C:/msys64/ucrt64/include/c++/15.2.0/deque \
+ C:/msys64/ucrt64/include/c++/15.2.0/bits/stl_uninitialized.h \
+ C:/msys64/ucrt64/include/c++/15.2.0/bits/stl_deque.h \
+ C:/msys64/ucrt64/include/c++/15.2.0/bits/deque.tcc \
  C:/msys64/ucrt64/include/c++/15.2.0/cstring \
  C:/msys64/ucrt64/include/d3dcompiler.h \
  C:/msys64/ucrt64/include/d3d11shader.h \
