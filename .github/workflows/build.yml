@@ -10,6 +10,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -20,6 +23,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
@@ -43,3 +48,9 @@ jobs:
           name: blackhole
           path: build/blackhole.exe
           if-no-files-found: error
+
+      - name: Create Git Tag
+        run: |
+          TAG="build-$(date +'%Y%m%d')"
+          git tag -f "$TAG"
+          git push origin "$TAG" --force
