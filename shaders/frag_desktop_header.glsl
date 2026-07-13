@@ -48,4 +48,4 @@ uniform float uHomeY = 0.04;
 uniform float uRandPhase = 0.0;
 uniform float uPresetOffset = 0.0;
 
-#define fragColor gl_FragColor
+out vec4 fragColor;
