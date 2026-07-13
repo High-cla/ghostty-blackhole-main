@@ -10,4 +10,4 @@ uniform vec4 iCurrentCursorColor;
 uniform vec4 iPreviousCursorColor;
 
 // Use built-in gl_FragColor (compatibility profile)
-#define fragColor gl_FragColor
+out vec4 fragColor;
