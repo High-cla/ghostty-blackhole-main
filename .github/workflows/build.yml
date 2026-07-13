@@ -16,9 +16,6 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-    defaults:
-      run:
-        shell: msys2 {0}
 
     steps:
       - name: Checkout
@@ -39,11 +36,13 @@ jobs:
             zip
 
       - name: Build with CMake (static linking)
+        shell: msys2 {0}
         run: |
           cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-static -static-libgcc -static-libstdc++"
           cmake --build build
 
       - name: Package for distribution
+        shell: msys2 {0}
         run: |
           mkdir -p dist
           cp build/blackhole.exe dist/
@@ -51,7 +50,7 @@ jobs:
           if [ -d build/shaders ]; then cp -r build/shaders dist/; fi
           ls -la dist/
 
-      - name: Upload Artifact (portable)
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: blackhole
@@ -59,6 +58,7 @@ jobs:
           if-no-files-found: error
 
       - name: Create Release zip
+        shell: msys2 {0}
         run: |
           cd dist
           TAG="build-$(date +'%Y%m%d')"
@@ -67,6 +67,6 @@ jobs:
 
       - name: Create Git Tag
         run: |
-          TAG="build-$(date +'%Y%m%d')"
-          git tag -f "$TAG"
-          git push origin "$TAG" --force
+          $tag = "build-{0:yyyyMMdd}" -f (Get-Date)
+          git tag -f $tag
+          git push origin $tag --force
