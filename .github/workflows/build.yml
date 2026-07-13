@@ -36,16 +36,12 @@ jobs:
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-make
             mingw-w64-ucrt-x86_64-glfw
+            zip
 
       - name: Build with CMake (static linking)
         run: |
           cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-static -static-libgcc -static-libstdc++"
           cmake --build build
-
-      - name: Verify no DLL dependency
-        run: |
-          echo "=== Checking DLL dependencies ==="
-          objdump -p build/blackhole.exe | grep "DLL Name" || echo "No DLL dependencies found (statically linked)"
 
       - name: Package for distribution
         run: |
@@ -55,7 +51,7 @@ jobs:
           if [ -d build/shaders ]; then cp -r build/shaders dist/; fi
           ls -la dist/
 
-      - name: Upload Artifact
+      - name: Upload Artifact (portable)
         uses: actions/upload-artifact@v4
         with:
           name: blackhole
@@ -68,13 +64,6 @@ jobs:
           TAG="build-$(date +'%Y%m%d')"
           zip -r "../${TAG}.zip" .
           cd ..
-
-      - name: Upload Release
-        uses: actions/upload-artifact@v4
-        with:
-          name: blackhole-zip
-          path: build-*.zip
-          if-no-files-found: error
 
       - name: Create Git Tag
         run: |
