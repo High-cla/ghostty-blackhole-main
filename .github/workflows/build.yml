@@ -46,12 +46,14 @@ jobs:
         run: |
           mkdir -p dist
           cp build/blackhole.exe dist/
-          if [ -f build/blackhole.glsl ]; then cp build/blackhole.glsl dist/; fi
-          if [ -d build/shaders ]; then cp -r build/shaders dist/; fi
+          # shaders are in source root, not in build/
+          if [ -f blackhole.glsl ]; then cp blackhole.glsl dist/; fi
+          if [ -d shaders ]; then cp -r shaders dist/; fi
+          # create launcher script
           printf '@echo off\r\n' > dist/start_blackhole.bat
           printf 'start /min "" "%%~dp0blackhole.exe" --render\r\n' >> dist/start_blackhole.bat
           printf 'echo.\r\n' >> dist/start_blackhole.bat
-          printf 'echo 按 Ctrl+C 关闭黑洞\r\n' >> dist/start_blackhole.bat
+          printf 'echo Press Ctrl+C to close black hole\r\n' >> dist/start_blackhole.bat
           printf 'pause >nul\r\n' >> dist/start_blackhole.bat
           ls -la dist/
 
