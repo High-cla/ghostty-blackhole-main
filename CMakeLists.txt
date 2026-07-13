@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.20)
 project(blackhole-standalone LANGUAGES CXX RC)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -56,12 +56,23 @@ if(MINGW)
     # Fix windres popen bug on Windows
     set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} --use-temp-file")
     # 自动拷贝 MSYS2 UCRT64 运行时 DLL 到输出目录
-    set(UCRT64_BIN "C:/msys64/ucrt64/bin")
-    add_custom_command(TARGET blackhole POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${UCRT64_BIN}/libwinpthread-1.dll"
-            "$<TARGET_FILE_DIR:blackhole>/libwinpthread-1.dll"
-        COMMENT "Copying libwinpthread-1.dll to output directory"
+    find_file(WINPTHREAD_DLL
+        NAMES libwinpthread-1.dll
+        PATHS
+            "$ENV{MINGW_PREFIX}/bin"
+            "$ENV{MSYSTEM_PREFIX}/bin"
+            "C:/msys64/ucrt64/bin"
+            "D:/a/_temp/msys64/ucrt64/bin"
+        NO_DEFAULT_PATH
     )
+    if(WINPTHREAD_DLL)
+        add_custom_command(TARGET blackhole POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${WINPTHREAD_DLL}"
+                "$<TARGET_FILE_DIR:blackhole>/libwinpthread-1.dll"
+            COMMENT "Copying libwinpthread-1.dll to output directory"
+        )
+    else()
+        message(WARNING "libwinpthread-1.dll not found, skipping copy")
+    endif()
 endif()
-
