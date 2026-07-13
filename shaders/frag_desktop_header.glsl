@@ -1,5 +1,5 @@
-// frag_desktop_header.glsl  standalone header for full blackhole.glsl
-#version 330
+// frag_desktop_header.gls  standalone header for full blackhole.glsk
+#version 330 compatibility
 
 uniform vec3 iResolution;
 uniform float iTime;
@@ -40,13 +40,12 @@ uniform float uPresetSpd  [MAX_PRESETS];
 uniform float uPresetExpo [MAX_PRESETS];
 uniform float uPresetStar [MAX_PRESETS];
 
-uniform int uPlayMode = 0;   // 0=顺序 1=循环 2=随机
-uniform float uSlotSec = 5.25;   // 每个预设播放秒数
+uniform int uPlayMode = 0;
+uniform float uSlotSec = 5.25;
 
-// Random spawn parameters (set once per session)
-uniform float uHomeX = 0.96;       // initial hole home X (0=left, 1=right)
-uniform float uHomeY = 0.04;       // initial hole home Y (0=top, 1=bottom)
-uniform float uRandPhase = 0.0;    // random phase offset for trajectory
-uniform float uPresetOffset = 0.0; // random time offset for preset cycling (seconds)
+uniform float uHomeX = 0.96;
+uniform float uHomeY = 0.04;
+uniform float uRandPhase = 0.0;
+uniform float uPresetOffset = 0.0;
 
 #define fragColor gl_FragColor
