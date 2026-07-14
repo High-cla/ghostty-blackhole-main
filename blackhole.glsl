@@ -570,6 +570,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
                 emitc += trans * cbb * (L.gain * 2.2 * density * tprof * tprof * boost);
                 trans *= 1.0 - clamp(L.opac * density, 0.0, 1.0);
             }
+            }
         }
         sPrev = s;
         xPrev = x;
