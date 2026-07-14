@@ -473,6 +473,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         return;
     }
 
+    // ⭐ Inner shadow culling: rays with b < B_CRIT are guaranteed captured
+    if (b < B_CRIT - 0.02) { fragColor = vec4(0.0); return; }
+
     // ====================== near field: trace the geodesic ==================
     // Parallel rays from a distant camera at +z. The hole is at the origin,
     // r_s = 1. Integrate  x'' = -(3/2) h² x / r⁵  (exact Schwarzschild photon
@@ -504,7 +507,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // out (the far cap is loose — bending falls off as 1/r^4, and longer
         // approach/exit strides leave more of the N_STEPS budget for the
         // strongly curved region)
-        float dt = clamp(0.16 * r, 0.03, 1.5);
+        // ⭐ Curvature-adaptive step: fine near photon sphere, coarse in empty space
+        float curv = 1.5 * h2 / (r2 * r2 * r);
+        float dt = clamp(0.4 / (curv * r + 0.05), 0.03, 2.5);
+        // empty-region speedup: double step when far from the hole
+        if (r > 15.0 && h2 > 2.0) dt *= 2.0;
         // leapfrog (kick-drift-kick) keeps the near-critical orbits stable
         vec3 a = -1.5 * h2 * x / (r2 * r2 * r);
         v += a * (0.5 * dt);
@@ -516,9 +523,17 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
         // ---- thin-disk crossing: the ray pierced the disk plane ----
         float s = dot(x, n);
-        if (s * sPrev < 0.0 && trans > 0.02) {
+        if (trans > 0.02) {
             float tc = sPrev / (sPrev - s);
-            vec3  xc = mix(xPrev, x, tc);
+            bool hit = (s * sPrev < 0.0);
+            // ⭐ Grazing check: large dt may skip equatorial crossings
+            if (!hit && abs(s) < 0.5 && abs(sPrev) < 0.5) {
+                vec3 xh = (xPrev + x) * 0.5;
+                float sh = dot(xh, n);
+                if (sh * sPrev < 0.0) { tc = sPrev / (sPrev - sh); hit = true; }
+            }
+            if (hit) {
+                vec3  xc = mix(xPrev, x, tc);
             float rc = length(xc);
             if (rc > rin && rc < rout) {
                 float band = smoothstep(rin, rin * 1.25, rc)
